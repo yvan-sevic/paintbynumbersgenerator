@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Paint by Numbers API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        .success {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎨 Paint by Numbers API Test</h1>
+    
+    <div class="test-section">
+        <h3>Test Image Upload (matches your client code)</h3>
+        <input type="file" id="imageInput" accept="image/*">
+        <input type="number" id="colorCount" value="16" min="2" max="64" placeholder="Number of colors">
+        <button onclick="testImageUpload()">Test Upload</button>
+        <div id="uploadResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test with Sample Image</h3>
+        <button onclick="testWithSampleImage()">Test with Sample Image</button>
+        <div id="sampleResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Health Check</h3>
+        <button onclick="testHealthCheck()">Test Health Check</button>
+        <div id="healthResult"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://43e6-42-200-214-30.ngrok-free.app';
+        
+        async function testImageUpload() {
+            const fileInput = document.getElementById('imageInput');
+            const colorCount = document.getElementById('colorCount').value;
+            const resultDiv = document.getElementById('uploadResult');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<div class="result error">Please select an image file first</div>';
+                return;
+            }
+            
+            try {
+                resultDiv.innerHTML = '<div class="result">Uploading image...</div>';
+                
+                // Create the same FormData as your client
+                const formData = new FormData();
+                formData.append('image', fileInput.files[0], 'generated-image.png');
+                formData.append('colors', colorCount.toString());
+                
+                console.log('Sending image to API for processing...');
+                
+                // Send to your API endpoint (matching your client code exactly)
+                const apiResponse = await fetch(API_BASE + '/generated-image', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'ngrok-skip-browser-warning': 'true'
+                    }
+                });
+                
+                const result = await apiResponse.json();
+                
+                if (apiResponse.ok && result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="result success">
+                            <h4>✅ Upload Successful!</h4>
+                            <p><strong>Message:</strong> ${result.message}</p>
+                            <p><strong>Image ID:</strong> ${result.id}</p>
+                            <p><strong>Image URL:</strong> <a href="${API_BASE}${result.imageUrl}" target="_blank">${result.imageUrl}</a></p>
+                            <p><strong>Process URL:</strong> <a href="${API_BASE}${result.processUrl}" target="_blank">${result.processUrl}</a></p>
+                            <button onclick="window.open('${API_BASE}${result.processUrl}', '_blank')">🎨 Open Processing Page</button>
+                        </div>
+                    `;
+                    
+                    // Auto-open the processing page
+                    console.log('🚀 Auto-opening processing page...');
+                    window.open(`${API_BASE}${result.processUrl}`, '_blank');
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+                            <h4>❌ Upload Failed</h4>
+                            <p><strong>Status:</strong> ${apiResponse.status}</p>
+                            <p><strong>Error:</strong> ${result.error || 'Unknown error'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h4>❌ Network Error</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p>Check if ngrok is running and the server is accessible.</p>
+                    </div>
+                `;
+                console.error('API Error:', error);
+            }
+        }
+        
+        async function testWithSampleImage() {
+            const resultDiv = document.getElementById('sampleResult');
+            
+            try {
+                resultDiv.innerHTML = '<div class="result">Creating sample image...</div>';
+                
+                // Create a simple test image
+                const canvas = document.createElement('canvas');
+                canvas.width = 100;
+                canvas.height = 100;
+                const ctx = canvas.getContext('2d');
+                
+                // Draw a simple pattern
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(0, 0, 50, 50);
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(50, 0, 50, 50);
+                ctx.fillStyle = '#0000ff';
+                ctx.fillRect(0, 50, 50, 50);
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(50, 50, 50, 50);
+                
+                // Convert to blob
+                canvas.toBlob(async (blob) => {
+                    const formData = new FormData();
+                    formData.append('image', blob, 'test-image.png');
+                    formData.append('colors', '4');
+                    
+                    const apiResponse = await fetch(API_BASE + '/generated-image', {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'ngrok-skip-browser-warning': 'true'
+                        }
+                    });
+                    
+                    const result = await apiResponse.json();
+                    
+                    if (apiResponse.ok && result.success) {
+                        resultDiv.innerHTML = `
+                            <div class="result success">
+                                <h4>✅ Sample Image Upload Successful!</h4>
+                                <p><strong>Process URL:</strong> <a href="${API_BASE}${result.processUrl}" target="_blank">${result.processUrl}</a></p>
+                                <button onclick="window.open('${API_BASE}${result.processUrl}', '_blank')">🎨 Open Processing Page</button>
+                            </div>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div class="result error">
+                                <h4>❌ Sample Upload Failed</h4>
+                                <p><strong>Error:</strong> ${result.error || 'Unknown error'}</p>
+                            </div>
+                        `;
+                    }
+                }, 'image/png');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h4>❌ Error</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                `;
+                console.error('Sample test error:', error);
+            }
+        }
+        
+        async function testHealthCheck() {
+            const resultDiv = document.getElementById('healthResult');
+            
+            try {
+                resultDiv.innerHTML = '<div class="result">Checking health...</div>';
+                
+                const response = await fetch(API_BASE + '/health', {
+                    headers: {
+                        'ngrok-skip-browser-warning': 'true'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="result success">
+                            <h4>✅ Server is healthy!</h4>
+                            <p><strong>Status:</strong> ${result.status}</p>
+                            <p><strong>Timestamp:</strong> ${result.timestamp}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+                            <h4>❌ Health check failed</h4>
+                            <p><strong>Status:</strong> ${response.status}</p>
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h4>❌ Health check error</h4>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p>Server might not be accessible through ngrok.</p>
+                    </div>
+                `;
+                console.error('Health check error:', error);
+            }
+        }
+    </script>
+</body>
+</html> 

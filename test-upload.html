@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paint by Numbers Generator - API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .error {
+            background-color: #ffebee;
+            border-color: #f44336;
+            color: #f44336;
+        }
+        .success {
+            background-color: #e8f5e8;
+            border-color: #4CAF50;
+            color: #2e7d32;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .download-links {
+            margin-top: 10px;
+        }
+        .download-links a {
+            display: inline-block;
+            margin: 5px 10px 5px 0;
+            padding: 8px 15px;
+            background-color: #2196F3;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .download-links a:hover {
+            background-color: #1976D2;
+        }
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        @media (max-width: 600px) {
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Paint by Numbers Generator</h1>
+        <p style="text-align: center; color: #666;">Upload an image to generate a paint by numbers template</p>
+        
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="imageFile">Select Image File:</label>
+                <input type="file" id="imageFile" name="image" accept="image/*" required>
+            </div>
+            
+            <h3>Settings (Optional)</h3>
+            <div class="settings-grid">
+                <div class="form-group">
+                    <label for="numberOfColors">Number of Colors:</label>
+                    <input type="number" id="numberOfColors" name="numberOfColors" value="16" min="2" max="64">
+                </div>
+                
+                <div class="form-group">
+                    <label for="colorSpace">Color Space:</label>
+                    <select id="colorSpace" name="colorSpace">
+                        <option value="RGB">RGB</option>
+                        <option value="HSL">HSL</option>
+                        <option value="Lab">Lab</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="minFacetSize">Min Facet Size (pixels):</label>
+                    <input type="number" id="minFacetSize" name="minFacetSize" value="20" min="1" max="100">
+                </div>
+                
+                <div class="form-group">
+                    <label for="maxWidth">Max Width:</label>
+                    <input type="number" id="maxWidth" name="maxWidth" value="1024" min="100" max="2048">
+                </div>
+                
+                <div class="form-group">
+                    <label for="maxHeight">Max Height:</label>
+                    <input type="number" id="maxHeight" name="maxHeight" value="1024" min="100" max="2048">
+                </div>
+                
+                <div class="form-group">
+                    <label for="clusterPrecision">Cluster Precision:</label>
+                    <input type="number" id="clusterPrecision" name="clusterPrecision" value="1" min="0.1" max="10" step="0.1">
+                </div>
+            </div>
+            
+            <button type="submit" id="submitBtn">Generate Paint by Numbers</button>
+        </form>
+        
+        <div id="results" style="display: none;"></div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const resultsDiv = document.getElementById('results');
+            const formData = new FormData(this);
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            resultsDiv.style.display = 'block';
+            resultsDiv.className = 'results loading';
+            resultsDiv.innerHTML = '<div>🎨 Generating your paint by numbers template...</div><div>This may take a few minutes depending on image complexity.</div>';
+            
+            try {
+                const response = await fetch('/generated-image', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    resultsDiv.className = 'results success';
+                    resultsDiv.innerHTML = `
+                        <h3>✅ Success!</h3>
+                        <p>${result.message}</p>
+                        <div class="download-links">
+                            <h4>Download Files:</h4>
+                            ${result.svgFiles.map(file => 
+                                `<a href="${file}" target="_blank">📄 ${file.split('/').pop()}</a>`
+                            ).join('')}
+                            ${result.jsonFiles.map(file => 
+                                `<a href="${file}" target="_blank">📊 ${file.split('/').pop()}</a>`
+                            ).join('')}
+                        </div>
+                    `;
+                } else {
+                    throw new Error(result.error || 'Unknown error occurred');
+                }
+            } catch (error) {
+                resultsDiv.className = 'results error';
+                resultsDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <p>${error.message}</p>
+                `;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Generate Paint by Numbers';
+            }
+        });
+        
+        // File size validation
+        document.getElementById('imageFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file && file.size > 50 * 1024 * 1024) { // 50MB
+                alert('File size is too large. Please select an image smaller than 50MB.');
+                this.value = '';
+            }
+        });
+    </script>
+</body>
+</html> 
