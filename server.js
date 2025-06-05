@@ -207,27 +207,27 @@ async function processImage(inputPath, outputPath, settings, imageId) {
         // Convert simplified settings to full CLI format
         const cliSettings = {
             randomSeed: 50,
-            kMeansNrOfClusters: parseInt(settings.numberOfColors) || 24,
-            kMeansMinDeltaDifference: 1,
+            kMeansNrOfClusters: parseInt(settings.numberOfColors) || 16,
+            kMeansMinDeltaDifference: 5,
             kMeansClusteringColorSpace: settings.colorSpace || 'RGB',
             kMeansColorRestrictions: [],
             colorAliases: {},
-            removeFacetsSmallerThanNrOfPoints: settings.minFacetSize || 20,
+            removeFacetsSmallerThanNrOfPoints: settings.minFacetSize || 50,
             removeFacetsFromLargeToSmall: true,
-            maximumNumberOfFacets: settings.maxFacets || 100000,
-            nrOfTimesToHalveBorderSegments: 2,
-            narrowPixelStripCleanupRuns: 1,
+            maximumNumberOfFacets: settings.maxFacets || 20000,
+            nrOfTimesToHalveBorderSegments: 1,
+            narrowPixelStripCleanupRuns: 0,
             resizeImageIfTooLarge: true,
-            resizeImageWidth: settings.maxWidth || 1024,
-            resizeImageHeight: settings.maxHeight || 1024,
+            resizeImageWidth: settings.maxWidth || 768,
+            resizeImageHeight: settings.maxHeight || 768,
             outputProfiles: [
                 {
                     name: "default",
                     svgShowLabels: true,
                     svgFillFacets: true,
                     svgShowBorders: true,
-                    svgSizeMultiplier: 3,
-                    svgFontSize: 50,
+                    svgSizeMultiplier: 2,
+                    svgFontSize: 40,
                     svgFontColor: "#333",
                     filetype: "svg"
                 }
@@ -515,13 +515,13 @@ app.post('/generated-image', upload.single('image'), async (req, res) => {
 
         // Parse settings from request
         const settings = {
-            numberOfColors: req.body.colors || '24',
+            numberOfColors: req.body.colors || '16',
             clusterPrecision: 1,
             colorSpace: 'RGB',
-            minFacetSize: 20,
-            maxFacets: 100000,
-            maxWidth: 1024,
-            maxHeight: 1024
+            minFacetSize: 50,
+            maxFacets: 20000,
+            maxWidth: 768,
+            maxHeight: 768
         };
 
         console.log(`Image stored with ID: ${imageId} Settings:`, settings);

@@ -1,0 +1,242 @@
+[
+  {
+    "areaPercentage": 0.05726256983240224,
+    "color": [
+      86,
+      116,
+      117
+    ],
+    "frequency": 41984,
+    "index": 0
+  },
+  {
+    "areaPercentage": 0.06017725427723464,
+    "color": [
+      68,
+      100,
+      104
+    ],
+    "frequency": 44121,
+    "index": 1
+  },
+  {
+    "areaPercentage": 0.025119206092877096,
+    "color": [
+      152,
+      151,
+      134
+    ],
+    "frequency": 18417,
+    "index": 2
+  },
+  {
+    "areaPercentage": 0.019443959497206703,
+    "color": [
+      175,
+      169,
+      147
+    ],
+    "frequency": 14256,
+    "index": 3
+  },
+  {
+    "areaPercentage": 0.007475613215782123,
+    "color": [
+      194,
+      162,
+      116
+    ],
+    "frequency": 5481,
+    "index": 4
+  },
+  {
+    "areaPercentage": 0.006107607367318435,
+    "color": [
+      131,
+      123,
+      98
+    ],
+    "frequency": 4478,
+    "index": 5
+  },
+  {
+    "areaPercentage": 0.047584235335195534,
+    "color": [
+      110,
+      127,
+      123
+    ],
+    "frequency": 34888,
+    "index": 6
+  },
+  {
+    "areaPercentage": 0.004753240659916201,
+    "color": [
+      192,
+      202,
+      188
+    ],
+    "frequency": 3485,
+    "index": 7
+  },
+  {
+    "areaPercentage": 0.2811886238652235,
+    "color": [
+      244,
+      244,
+      229
+    ],
+    "frequency": 206163,
+    "index": 8
+  },
+  {
+    "areaPercentage": 0.02157030158868715,
+    "color": [
+      206,
+      186,
+      154
+    ],
+    "frequency": 15815,
+    "index": 9
+  },
+  {
+    "areaPercentage": 0.07441924537360335,
+    "color": [
+      25,
+      57,
+      61
+    ],
+    "frequency": 54563,
+    "index": 10
+  },
+  {
+    "areaPercentage": 0.054802068784916204,
+    "color": [
+      40,
+      68,
+      78
+    ],
+    "frequency": 40180,
+    "index": 11
+  },
+  {
+    "areaPercentage": 0.014817562849162011,
+    "color": [
+      121,
+      144,
+      141
+    ],
+    "frequency": 10864,
+    "index": 12
+  },
+  {
+    "areaPercentage": 0.04324698847765363,
+    "color": [
+      18,
+      38,
+      49
+    ],
+    "frequency": 31708,
+    "index": 13
+  },
+  {
+    "areaPercentage": 0.030342997119413406,
+    "color": [
+      225,
+      204,
+      169
+    ],
+    "frequency": 22247,
+    "index": 14
+  },
+  {
+    "areaPercentage": 0.0602304469273743,
+    "color": [
+      52,
+      82,
+      90
+    ],
+    "frequency": 44160,
+    "index": 15
+  },
+  {
+    "areaPercentage": 0.014626614874301676,
+    "color": [
+      235,
+      224,
+      192
+    ],
+    "frequency": 10724,
+    "index": 16
+  },
+  {
+    "areaPercentage": 0.026739536050977654,
+    "color": [
+      35,
+      79,
+      56
+    ],
+    "frequency": 19605,
+    "index": 17
+  },
+  {
+    "areaPercentage": 0.020454619849860335,
+    "color": [
+      73,
+      99,
+      49
+    ],
+    "frequency": 14997,
+    "index": 18
+  },
+  {
+    "areaPercentage": 0.021785800017458102,
+    "color": [
+      234,
+      172,
+      116
+    ],
+    "frequency": 15973,
+    "index": 19
+  },
+  {
+    "areaPercentage": 0.06244135169343575,
+    "color": [
+      10,
+      18,
+      31
+    ],
+    "frequency": 45781,
+    "index": 20
+  },
+  {
+    "areaPercentage": 0.013296798620810056,
+    "color": [
+      110,
+      120,
+      42
+    ],
+    "frequency": 9749,
+    "index": 21
+  },
+  {
+    "areaPercentage": 0.01241980185055866,
+    "color": [
+      153,
+      147,
+      40
+    ],
+    "frequency": 9106,
+    "index": 22
+  },
+  {
+    "areaPercentage": 0.019693555778631286,
+    "color": [
+      185,
+      167,
+      41
+    ],
+    "frequency": 14439,
+    "index": 23
+  }
+]
