@@ -1,3 +1,17 @@
 node_modules
-*.js
 *.map
+# Ignore compiled/build files, but keep source files
+dist/
+build/
+# Logs
+*.log
+npm-debug.log*
+# OS generated files
+.DS_Store
+Thumbs.db
+# Editor files
+.vscode/
+.idea/
+# Environment files
+.env
+.env.local
