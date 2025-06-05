@@ -385,29 +385,38 @@ async function processImage(inputPath, outputPath, settings, imageId) {
             if (code === 0) {
                 console.log('✅ Processing completed successfully!');
                 
-                // Check if output files exist
-                const svgExists = fs.existsSync(outputPath);
+                // Check if output files exist (CLI adds profile name suffix to SVG)
+                const svgBaseName = path.basename(outputPath, '.svg');
+                const svgWithProfile = path.join(path.dirname(outputPath), `${svgBaseName}-default.svg`);
+                const svgExists = fs.existsSync(svgWithProfile);
                 const jsonPath = outputPath.replace('.svg', '.json');
                 const jsonExists = fs.existsSync(jsonPath);
                 
                 console.log('📋 Output files - SVG:', svgExists, 'JSON:', jsonExists);
+                console.log('📁 Expected SVG path:', svgWithProfile);
+                console.log('📁 Expected JSON path:', jsonPath);
                 
-                if (svgExists) {
-                    console.log('📁 Expected SVG path:', outputPath);
-                    
-                    // Send final result
-                    broadcastProgress(imageId, {
-                        type: 'result',
-                        svgPath: outputPath,
-                        jsonPath: jsonExists ? jsonPath : null,
-                        message: 'All files generated successfully!'
-                    });
-                    
-                    resolve({ svgPath: outputPath, jsonPath: jsonExists ? jsonPath : null });
-                } else {
-                    console.error('❌ SVG file was not created');
-                    reject(new Error('SVG file was not created'));
-                }
+                // Always resolve with available files (don't reject if SVG missing)
+                const result = {
+                    svgPath: svgExists ? svgWithProfile : null,
+                    jsonPath: jsonExists ? jsonPath : null,
+                    svgExists,
+                    jsonExists
+                };
+                
+                console.log('🎯 processImage resolving with:', result);
+                
+                // Send final result broadcast from here too
+                broadcastProgress(imageId, {
+                    type: 'files_check',
+                    svgExists,
+                    jsonExists,
+                    svgPath: result.svgPath,
+                    jsonPath: result.jsonPath,
+                    message: `Files check complete - SVG: ${svgExists}, JSON: ${jsonExists}`
+                });
+                
+                resolve(result);
             } else {
                 console.error('❌ CLI process failed with code:', code);
                 reject(new Error(`CLI process failed with code: ${code}`));
@@ -535,37 +544,55 @@ app.post('/generated-image', upload.single('image'), async (req, res) => {
             console.log(`🎯 Starting processing for image ${imageId}`);
             const result = await processImage(imagePath, outputSvgPath, settings, imageId);
             
-            // Check if files were created (CLI adds profile name to the filename)
-            const svgBaseName = path.basename(outputSvgPath, '.svg');
-            const svgWithProfile = path.join(outputsDir, `${svgBaseName}-default.svg`);
-            const svgExists = fs.existsSync(svgWithProfile);
-            const jsonExists = fs.existsSync(outputJsonPath);
+            console.log(`🔍 processImage returned:`, result);
+            
+            // Use the actual paths returned by processImage
+            const svgPath = result.svgPath;
+            const jsonPath = result.jsonPath;
+            const svgExists = svgPath && fs.existsSync(svgPath);
+            const jsonExists = jsonPath && fs.existsSync(jsonPath);
 
             console.log(`📋 Output files - SVG: ${svgExists}, JSON: ${jsonExists}`);
-            console.log(`📁 Expected SVG path: ${svgWithProfile}`);
+            console.log(`📁 Actual SVG path: ${svgPath}`);
+            console.log(`📁 Actual JSON path: ${jsonPath}`);
+
+            // Construct URLs
+            const svgUrl = svgExists ? `/outputs/${path.basename(svgPath)}` : null;
+            const jsonUrl = jsonExists ? `/outputs/${path.basename(jsonPath)}` : null;
+            
+            console.log(`🌐 Constructed URLs - SVG: ${svgUrl}, JSON: ${jsonUrl}`);
 
             // Store processing result
             const processResult = {
                 imageId,
                 inputPath: imagePath,
-                outputSvgPath: svgWithProfile,
-                outputJsonPath,
+                outputSvgPath: svgPath,
+                outputJsonPath: jsonPath,
                 settings,
                 processedAt: new Date().toISOString(),
                 success: true,
-                cliOutput: result.stdout,
-                svgUrl: svgExists ? `/outputs/${path.basename(svgWithProfile)}` : null,
-                jsonUrl: jsonExists ? `/outputs/${imageId}.json` : null
+                svgUrl: svgUrl,
+                jsonUrl: jsonUrl
             };
+
+            console.log(`💾 Storing processResult:`, {
+                imageId: processResult.imageId,
+                success: processResult.success,
+                svgUrl: processResult.svgUrl,
+                jsonUrl: processResult.jsonUrl
+            });
 
             processedImages.set(imageId, processResult);
 
             // Broadcast final result to SSE clients
+            console.log(`📡 Broadcasting final result with URLs - SVG: ${processResult.svgUrl}, JSON: ${processResult.jsonUrl}`);
             broadcastProgress(imageId, {
                 type: 'result',
-                result: processResult,
+                imageId: imageId,
+                success: true,
                 svgUrl: processResult.svgUrl,
                 jsonUrl: processResult.jsonUrl,
+                result: processResult,
                 timestamp: new Date().toISOString()
             });
 
