@@ -56,6 +56,7 @@ const upload = multer({ storage });
 // In-memory storage for processed results
 const processedImages = new Map();
 const progressStreams = new Map(); // Store SSE connections
+const activeProcesses = new Map(); // Track active child processes for cancellation
 
 // Helper function to broadcast progress to connected SSE clients
 function broadcastProgress(imageId, message) {
@@ -71,6 +72,48 @@ function broadcastProgress(imageId, message) {
         });
         console.log(`📡 Broadcast to ${clients.length} clients:`, message.type);
     }
+}
+
+// Helper function to cancel processing for an image
+function cancelProcessing(imageId, reason = 'Client disconnected') {
+    const childProcess = activeProcesses.get(imageId);
+    if (childProcess && !childProcess.killed) {
+        console.log(`🚫 Cancelling processing for image ${imageId}: ${reason}`);
+        
+        // Kill the child process
+        childProcess.kill('SIGTERM');
+        
+        // If SIGTERM doesn't work, force kill after 5 seconds
+        setTimeout(() => {
+            if (!childProcess.killed) {
+                console.log(`💀 Force killing process for image ${imageId}`);
+                childProcess.kill('SIGKILL');
+            }
+        }, 5000);
+        
+        // Clean up
+        activeProcesses.delete(imageId);
+        
+        // Store cancellation result
+        const cancelResult = {
+            imageId,
+            processedAt: new Date().toISOString(),
+            success: false,
+            cancelled: true,
+            reason: reason
+        };
+        processedImages.set(imageId, cancelResult);
+        
+        // Broadcast cancellation to any remaining clients
+        broadcastProgress(imageId, {
+            type: 'cancelled',
+            message: `Processing cancelled: ${reason}`,
+            timestamp: new Date().toISOString()
+        });
+        
+        return true;
+    }
+    return false;
 }
 
 // Parse SVG and extract regions for progressive streaming
@@ -252,9 +295,13 @@ async function processImage(inputPath, outputPath, settings, imageId) {
 
         const cli = spawn('node', args, { stdio: ['pipe', 'pipe', 'pipe'] });
         
+        // Store the process for potential cancellation
+        activeProcesses.set(imageId, cli);
+        
         let liveStreamingStarted = false;
         let liveFacetCount = 0;
         let totalFacetsExpected = 0;
+        let processWasCancelled = false;
         
         cli.stdout.on('data', (data) => {
             const output = data.toString();
@@ -381,8 +428,18 @@ async function processImage(inputPath, outputPath, settings, imageId) {
             }
         });
 
-        cli.on('close', (code) => {
-            if (code === 0) {
+        cli.on('close', (code, signal) => {
+            // Clean up the active process tracking
+            activeProcesses.delete(imageId);
+            
+            if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+                console.log(`🚫 Process was cancelled with signal: ${signal}`);
+                processWasCancelled = true;
+                reject(new Error(`Process was cancelled (${signal})`));
+                return;
+            }
+            
+            if (code === 0 && !processWasCancelled) {
                 console.log('✅ Processing completed successfully!');
                 
                 // Check if output files exist (CLI adds profile name suffix to SVG)
@@ -417,7 +474,7 @@ async function processImage(inputPath, outputPath, settings, imageId) {
                 });
                 
                 resolve(result);
-            } else {
+            } else if (!processWasCancelled) {
                 console.error('❌ CLI process failed with code:', code);
                 reject(new Error(`CLI process failed with code: ${code}`));
             }
@@ -425,6 +482,8 @@ async function processImage(inputPath, outputPath, settings, imageId) {
 
         cli.on('error', (error) => {
             console.error('❌ Failed to start CLI process:', error);
+            // Clean up the active process tracking
+            activeProcesses.delete(imageId);
             reject(error);
         });
     });
@@ -487,9 +546,13 @@ app.get('/progress/:imageId', (req, res) => {
             clients.splice(index, 1);
         }
         
-        // Remove empty arrays
+        // If no more clients connected, cancel the processing
         if (clients.length === 0) {
+            console.log(`🚫 No more clients connected for image ${imageId}, cancelling processing`);
             progressStreams.delete(imageId);
+            
+            // Cancel the processing if it's still active
+            cancelProcessing(imageId, 'All clients disconnected');
         }
     });
 });
@@ -599,6 +662,9 @@ app.post('/generated-image', upload.single('image'), async (req, res) => {
         } catch (processingError) {
             console.error(`❌ Processing failed for image ${imageId}:`, processingError.message);
             
+            // Check if it was cancelled
+            const wasCancelled = processingError.message.includes('cancelled');
+            
             // Store failed result
             const processResult = {
                 imageId,
@@ -606,17 +672,20 @@ app.post('/generated-image', upload.single('image'), async (req, res) => {
                 settings,
                 processedAt: new Date().toISOString(),
                 success: false,
+                cancelled: wasCancelled,
                 error: processingError.message
             };
 
             processedImages.set(imageId, processResult);
 
-            // Broadcast error to SSE clients
-            broadcastProgress(imageId, {
-                type: 'result_error',
-                error: processingError.message,
-                timestamp: new Date().toISOString()
-            });
+            // Broadcast error to SSE clients (only if not cancelled - cancellation already broadcasts)
+            if (!wasCancelled) {
+                broadcastProgress(imageId, {
+                    type: 'result_error',
+                    error: processingError.message,
+                    timestamp: new Date().toISOString()
+                });
+            }
         }
 
     } catch (error) {
@@ -644,6 +713,25 @@ app.get('/status/:imageId', (req, res) => {
         success: true,
         result
     });
+});
+
+// Cancel processing endpoint
+app.post('/cancel/:imageId', (req, res) => {
+    const { imageId } = req.params;
+    
+    const cancelled = cancelProcessing(imageId, 'Manual cancellation requested');
+    
+    if (cancelled) {
+        res.json({
+            success: true,
+            message: `Processing cancelled for image ${imageId}`
+        });
+    } else {
+        res.status(404).json({
+            success: false,
+            error: 'No active processing found for this image ID'
+        });
+    }
 });
 
 // Serve uploaded files
@@ -704,7 +792,9 @@ app.get('/health', (req, res) => {
         status: 'ok', 
         message: 'Paint by Numbers Generator Server is running',
         timestamp: new Date().toISOString(),
-        processedImages: processedImages.size
+        processedImages: processedImages.size,
+        activeProcesses: activeProcesses.size,
+        connectedSSEClients: Array.from(progressStreams.entries()).reduce((total, [imageId, clients]) => total + clients.length, 0)
     });
 });
 
@@ -728,11 +818,22 @@ app.get('/api-docs', (req, res) => {
                     processingCompleted: 'boolean'
                 }
             },
+            'GET /progress/:imageId': {
+                description: 'Server-Sent Events endpoint for real-time processing progress',
+                note: 'Processing is automatically cancelled if all SSE clients disconnect'
+            },
             'GET /status/:imageId': {
                 description: 'Get processing status for an image',
                 response: {
                     success: 'boolean',
-                    result: 'object with processing details'
+                    result: 'object with processing details (includes cancelled flag)'
+                }
+            },
+            'POST /cancel/:imageId': {
+                description: 'Manually cancel processing for an image',
+                response: {
+                    success: 'boolean',
+                    message: 'string'
                 }
             },
             'GET /health': {
@@ -771,9 +872,21 @@ app.get('/', (req, res) => {
                     </div>
                     
                     <div class="endpoint">
+                        <h3>GET /progress/:imageId</h3>
+                        <p>Server-Sent Events endpoint for real-time processing progress</p>
+                        <p><em>Note: Processing is automatically cancelled if all SSE clients disconnect</em></p>
+                    </div>
+                    
+                    <div class="endpoint">
                         <h3>GET /status/:imageId</h3>
                         <p>Check processing status and get results</p>
                         <pre>curl ${req.get('host')}/status/your-image-id</pre>
+                    </div>
+                    
+                    <div class="endpoint">
+                        <h3>POST /cancel/:imageId</h3>
+                        <p>Manually cancel processing for an image</p>
+                        <pre>curl -X POST ${req.get('host')}/cancel/your-image-id</pre>
                     </div>
                     
                     <div class="endpoint">
@@ -793,6 +906,8 @@ app.get('/', (req, res) => {
                     
                     <h2>📊 Current Status</h2>
                     <p>Processed Images: <strong>${processedImages.size}</strong></p>
+                    <p>Active Processes: <strong>${activeProcesses.size}</strong></p>
+                    <p>Connected SSE Clients: <strong>${Array.from(progressStreams.entries()).reduce((total, [imageId, clients]) => total + clients.length, 0)}</strong></p>
                     
                     <h2>🧪 Test Interface</h2>
                     <p><a href="/test-api.html">Test API Interface</a></p>
