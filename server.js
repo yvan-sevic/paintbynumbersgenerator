@@ -74,6 +74,25 @@ function broadcastProgress(imageId, message) {
     }
 }
 
+// Helper function to clean up files after processing
+function cleanupFiles(imageId, inputPath, outputSvgPath, outputJsonPath, settingsPath) {
+    const filesToClean = [inputPath, outputSvgPath, outputJsonPath, settingsPath].filter(Boolean);
+    
+    setTimeout(() => {
+        filesToClean.forEach(filePath => {
+            try {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`🗑️  Cleaned up file: ${filePath}`);
+                }
+            } catch (error) {
+                console.error(`❌ Error cleaning up file ${filePath}:`, error);
+            }
+        });
+        console.log(`✨ Cleanup completed for image ${imageId}`);
+    }, 10000); // Wait 10 seconds to ensure client received the data
+}
+
 // Helper function to cancel processing for an image
 function cancelProcessing(imageId, reason = 'Client disconnected') {
     const childProcess = activeProcesses.get(imageId);
@@ -93,6 +112,53 @@ function cancelProcessing(imageId, reason = 'Client disconnected') {
         
         // Clean up
         activeProcesses.delete(imageId);
+        
+        // Clean up any files that might have been created before cancellation
+        setTimeout(() => {
+            try {
+                // Clean up input file if it exists
+                const uploadFiles = fs.readdirSync(uploadsDir).filter(file => file.startsWith(imageId));
+                uploadFiles.forEach(file => {
+                    const filePath = path.join(uploadsDir, file);
+                    try {
+                        fs.unlinkSync(filePath);
+                        console.log(`🗑️  Cleaned up upload file: ${filePath}`);
+                    } catch (err) {
+                        console.error(`❌ Error cleaning upload file: ${err}`);
+                    }
+                });
+                
+                // Clean up any output files that might have been created
+                const outputFiles = fs.readdirSync(outputsDir).filter(file => file.startsWith(imageId));
+                outputFiles.forEach(file => {
+                    const filePath = path.join(outputsDir, file);
+                    try {
+                        fs.unlinkSync(filePath);
+                        console.log(`🗑️  Cleaned up output file: ${filePath}`);
+                    } catch (err) {
+                        console.error(`❌ Error cleaning output file: ${err}`);
+                    }
+                });
+                
+                // Clean up settings files
+                const settingsFiles = fs.readdirSync(outputsDir).filter(file => 
+                    file.startsWith('settings-') && file.endsWith('.json')
+                );
+                settingsFiles.forEach(settingsFile => {
+                    const settingsPath = path.join(outputsDir, settingsFile);
+                    try {
+                        fs.unlinkSync(settingsPath);
+                        console.log(`🗑️  Cleaned up settings file: ${settingsPath}`);
+                    } catch (err) {
+                        console.error(`❌ Error cleaning settings file: ${err}`);
+                    }
+                });
+                
+                console.log(`✨ Cancellation cleanup completed for image ${imageId}`);
+            } catch (error) {
+                console.error(`❌ Error during cancellation cleanup: ${error}`);
+            }
+        }, 1000); // Short delay to ensure process is fully stopped
         
         // Store cancellation result
         const cancelResult = {
@@ -458,7 +524,8 @@ async function processImage(inputPath, outputPath, settings, imageId) {
                     svgPath: svgExists ? svgWithProfile : null,
                     jsonPath: jsonExists ? jsonPath : null,
                     svgExists,
-                    jsonExists
+                    jsonExists,
+                    settingsPath // Include settings path for cleanup
                 };
                 
                 console.log('🎯 processImage resolving with:', result);
@@ -659,6 +726,9 @@ app.post('/generated-image', upload.single('image'), async (req, res) => {
                 timestamp: new Date().toISOString()
             });
 
+            // Clean up files after successful processing
+            cleanupFiles(imageId, imagePath, svgPath, jsonPath, result.settingsPath);
+
         } catch (processingError) {
             console.error(`❌ Processing failed for image ${imageId}:`, processingError.message);
             
@@ -685,6 +755,35 @@ app.post('/generated-image', upload.single('image'), async (req, res) => {
                     error: processingError.message,
                     timestamp: new Date().toISOString()
                 });
+
+                // Clean up files after error (but not if cancelled - files might not exist yet)
+                setTimeout(() => {
+                    try {
+                        // Clean up input file
+                        if (fs.existsSync(imagePath)) {
+                            fs.unlinkSync(imagePath);
+                            console.log(`🗑️  Cleaned up input file: ${imagePath}`);
+                        }
+                        
+                        // Clean up any settings file that might have been created
+                        const settingsFiles = fs.readdirSync(outputsDir).filter(file => 
+                            file.startsWith('settings-') && file.endsWith('.json')
+                        );
+                        settingsFiles.forEach(settingsFile => {
+                            const settingsPath = path.join(outputsDir, settingsFile);
+                            try {
+                                fs.unlinkSync(settingsPath);
+                                console.log(`🗑️  Cleaned up settings file: ${settingsPath}`);
+                            } catch (err) {
+                                console.error(`❌ Error cleaning settings file: ${err}`);
+                            }
+                        });
+                        
+                        console.log(`✨ Error cleanup completed for image ${imageId}`);
+                    } catch (error) {
+                        console.error(`❌ Error during cleanup: ${error}`);
+                    }
+                }, 2000); // Shorter delay for error cleanup
             }
         }
 
@@ -820,7 +919,7 @@ app.get('/api-docs', (req, res) => {
             },
             'GET /progress/:imageId': {
                 description: 'Server-Sent Events endpoint for real-time processing progress',
-                note: 'Processing is automatically cancelled if all SSE clients disconnect'
+                note: 'Processing is automatically cancelled if all SSE clients disconnect. Files are cleaned up automatically after processing.'
             },
             'GET /status/:imageId': {
                 description: 'Get processing status for an image',
@@ -909,6 +1008,9 @@ app.get('/', (req, res) => {
                     <p>Active Processes: <strong>${activeProcesses.size}</strong></p>
                     <p>Connected SSE Clients: <strong>${Array.from(progressStreams.entries()).reduce((total, [imageId, clients]) => total + clients.length, 0)}</strong></p>
                     
+                    <h2>🗑️ File Management</h2>
+                    <p><em>Files are automatically cleaned up 10 seconds after processing to keep server storage clean.</em></p>
+                    
                     <h2>🧪 Test Interface</h2>
                     <p><a href="/test-api.html">Test API Interface</a></p>
                     <p><a href="/original">Original Paint by Numbers App</a></p>
@@ -926,13 +1028,65 @@ app.get('/original', (req, res) => {
 // Serve static files for everything else (CSS, JS, etc.)
 app.use(express.static('.'));
 
+// Periodic cleanup task for orphaned files
+setInterval(() => {
+    try {
+        const now = Date.now();
+        const oneHourAgo = now - (60 * 60 * 1000); // 1 hour ago
+        
+        console.log('🧹 Running periodic cleanup for orphaned files...');
+        
+        // Clean up old files in uploads directory (older than 1 hour)
+        if (fs.existsSync(uploadsDir)) {
+            const uploadFiles = fs.readdirSync(uploadsDir);
+            for (const file of uploadFiles) {
+                const filePath = path.join(uploadsDir, file);
+                const stats = fs.statSync(filePath);
+                if (stats.mtime.getTime() < oneHourAgo) {
+                    try {
+                        fs.unlinkSync(filePath);
+                        console.log(`🧹 Periodic cleanup: Removed old upload file ${file}`);
+                    } catch (error) {
+                        console.error(`❌ Error removing old upload file ${file}:`, error);
+                    }
+                }
+            }
+        }
+        
+        // Clean up old files in outputs directory (older than 1 hour)
+        if (fs.existsSync(outputsDir)) {
+            const outputFiles = fs.readdirSync(outputsDir);
+            for (const file of outputFiles) {
+                const filePath = path.join(outputsDir, file);
+                const stats = fs.statSync(filePath);
+                if (stats.mtime.getTime() < oneHourAgo) {
+                    try {
+                        fs.unlinkSync(filePath);
+                        console.log(`🧹 Periodic cleanup: Removed old output file ${file}`);
+                    } catch (error) {
+                        console.error(`❌ Error removing old output file ${file}:`, error);
+                    }
+                }
+            }
+        }
+        
+        console.log('🧹 Periodic cleanup completed');
+    } catch (error) {
+        console.error('❌ Error in periodic cleanup:', error);
+    }
+}, 60 * 60 * 1000); // Run every hour
+
 app.listen(PORT, () => {
     console.log(`Paint by Numbers Generator Server running on port ${PORT}`);
     console.log(`Access the web interface at: http://localhost:${PORT}`);
     console.log(`API endpoint: POST http://localhost:${PORT}/generated-image`);
     console.log(`Health check: GET http://localhost:${PORT}/health`);
     console.log(`API docs: GET http://localhost:${PORT}/api-docs`);
+    console.log(`📁 Uploads: ${uploadsDir}`);
+    console.log(`📁 Outputs: ${outputsDir}`);
+    console.log(`🗑️ Auto-cleanup: Files deleted 10 seconds after processing`);
+    console.log(`🧹 Periodic cleanup: Orphaned files removed every hour`);
     console.log(`For ngrok usage:`);
     console.log(`1. Upload image to: POST https://43e6-42-200-214-30.ngrok-free.app/generated-image`);
-    console.log(`2. Processing now happens automatically and returns SVG/JSON URLs`);
+    console.log(`2. Processing returns SVG/JSON URLs and automatically cleans up files after 10 seconds`);
 }); 
