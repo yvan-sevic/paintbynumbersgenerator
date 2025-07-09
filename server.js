@@ -7,6 +7,17 @@ const { v4: uuidv4 } = require('uuid');
 const { spawn } = require('child_process');
 const xml2js = require('xml2js');
 
+// Import fetch for Node.js versions that don't have it built-in
+const fetch = (() => {
+    try {
+        // Try to use built-in fetch (Node.js 18+)
+        return globalThis.fetch;
+    } catch {
+        // Fallback to node-fetch for older versions
+        return require('node-fetch');
+    }
+})();
+
 const app = express();
 const PORT = process.env.PORT || 80;
 
@@ -796,6 +807,119 @@ app.post('/generated-image', upload.single('image'), async (req, res) => {
     }
 });
 
+// Google Cloud AI Platform image generation endpoint
+app.post('/api/generate-image', async (req, res) => {
+    try {
+        const { description, selectedOrientation } = req.body;
+        
+        // Validate required parameters
+        if (!description) {
+            return res.status(400).json({
+                success: false,
+                error: 'Description is required'
+            });
+        }
+        
+        console.log('🎨 Generating image with Imagen 3.0:', {
+            description,
+            orientation: selectedOrientation || 'landscape'
+        });
+        
+        // Check for authorization token
+        const authToken = process.env.GOOGLE_CLOUD_TOKEN || 'ya29.a0AS3H6Nx1kox-buURQVjzyn0OQwSnzOgfRUAxIx2Cp4bPDljxmBGfR-MaROAgdL-YNUP5zTGnlV2AJyAgPvdBS-twUXtIDZJ1KFkCskxXMnvjgbyU9GivQ5JO1isd6RsbC2bf6Wz4VfAcBlBZyk0UVUYiSxXZNUDO04_pxLW7xsQ7ixvgaCgYKAe8SAQ4SFQHGX2MimBzH7hPwZ48sSXnQxX1hAA0183';
+        
+        if (!authToken) {
+            return res.status(500).json({
+                success: false,
+                error: 'Google Cloud authorization token not configured'
+            });
+        }
+        
+        // Make request to Google Cloud AI Platform
+        const response = await fetch('https://us-central1-aiplatform.googleapis.com/v1/projects/boost-imagen-2024/locations/us-central1/publishers/google/models/imagen-3.0-fast-generate-001:predict', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+                instances: [{
+                    prompt: `close-up paint by numbers ${description}, zoomed in composition, detailed focus, large shapes, clean sections, simple shapes, vector style, clean image only`
+                }],
+                parameters: {
+                    sampleCount: 1,
+                    aspectRatio: selectedOrientation === 'portrait' ? '3:4' : '16:9',
+                    negativePrompt: "palette, paint containers, paint pots, numbered sections, numbers, labels, brushes, art supplies, easel, frame border, watermark, text, UI elements, interface, wide angle, distant view, tiny details"
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Google Cloud AI Platform error:', response.status, errorText);
+            return res.status(response.status).json({
+                success: false,
+                error: `AI Platform error: ${response.status} - ${response.statusText}`,
+                details: errorText
+            });
+        }
+        
+        const data = await response.json();
+        
+        console.log('✅ Image generated successfully');
+        
+        // Extract the base64 image data from Google Cloud response
+        let imageBase64 = null;
+        let mimeType = 'image/png';
+        
+        if (data.predictions && data.predictions.length > 0) {
+            const prediction = data.predictions[0];
+            
+            // Google Cloud AI Platform typically returns bytesBase64Encoded
+            if (prediction.bytesBase64Encoded) {
+                imageBase64 = prediction.bytesBase64Encoded;
+                mimeType = prediction.mimeType || 'image/png';
+            }
+            // Sometimes it might be in a different field
+            else if (prediction.image) {
+                imageBase64 = prediction.image;
+            }
+            // Or direct base64 string
+            else if (typeof prediction === 'string') {
+                imageBase64 = prediction;
+            }
+        }
+        
+        if (!imageBase64) {
+            console.error('❌ No image data found in response');
+            return res.status(500).json({
+                success: false,
+                error: 'No image data returned from AI platform',
+                rawResponse: data
+            });
+        }
+        
+        console.log('✅ Extracted base64 image data, length:', imageBase64.length);
+        
+        // Return the properly formatted image data
+        res.json({
+            success: true,
+            imageData: imageBase64,
+            mimeType: mimeType,
+            dataUrl: `data:${mimeType};base64,${imageBase64}`,
+            message: 'Image generated successfully',
+            rawResponse: data
+        });
+        
+    } catch (error) {
+        console.error('❌ Error generating image:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to generate image: ' + error.message
+        });
+    }
+});
+
 // Get processing status endpoint
 app.get('/status/:imageId', (req, res) => {
     const { imageId } = req.params;
@@ -901,6 +1025,18 @@ app.get('/health', (req, res) => {
 app.get('/api-docs', (req, res) => {
     res.json({
         endpoints: {
+            'POST /api/generate-image': {
+                description: 'Generate an image using Google Cloud AI Platform (Imagen 3.0)',
+                parameters: {
+                    description: 'string (required) - Description of the image to generate',
+                    selectedOrientation: 'string (optional) - "portrait" or "landscape" (default: landscape)'
+                },
+                response: {
+                    success: 'boolean',
+                    imageData: 'object (Google Cloud AI Platform response)',
+                    message: 'string'
+                }
+            },
             'POST /generated-image': {
                 description: 'Upload and process an image',
                 parameters: {
@@ -963,6 +1099,14 @@ app.get('/', (req, res) => {
                     <p class="status">Server is running and ready to process images!</p>
                     
                     <h2>📡 API Endpoints</h2>
+                    
+                    <div class="endpoint">
+                        <h3>POST /api/generate-image</h3>
+                        <p>Generate an image using Google Cloud AI Platform (Imagen 3.0)</p>
+                        <pre>curl -X POST -H "Content-Type: application/json" \\
+     -d '{"description":"a beautiful landscape","selectedOrientation":"landscape"}' \\
+     ${req.get('host')}/api/generate-image</pre>
+                    </div>
                     
                     <div class="endpoint">
                         <h3>POST /generated-image</h3>
@@ -1080,6 +1224,7 @@ app.listen(PORT, () => {
     console.log(`Paint by Numbers Generator Server running on port ${PORT}`);
     console.log(`Access the web interface at: http://localhost:${PORT}`);
     console.log(`API endpoint: POST http://localhost:${PORT}/generated-image`);
+    console.log(`🎨 AI Generation: POST http://localhost:${PORT}/api/generate-image`);
     console.log(`Health check: GET http://localhost:${PORT}/health`);
     console.log(`API docs: GET http://localhost:${PORT}/api-docs`);
     console.log(`📁 Uploads: ${uploadsDir}`);
@@ -1089,4 +1234,10 @@ app.listen(PORT, () => {
     console.log(`For ngrok usage:`);
     console.log(`1. Upload image to: POST https://43e6-42-200-214-30.ngrok-free.app/generated-image`);
     console.log(`2. Processing returns SVG/JSON URLs and automatically cleans up files after 10 seconds`);
+    console.log(`\n🔐 Environment Variables:`);
+    console.log(`GOOGLE_CLOUD_TOKEN=${process.env.GOOGLE_CLOUD_TOKEN ? '[SET]' : '[NOT SET - Using fallback token]'}`);
+    if (!process.env.GOOGLE_CLOUD_TOKEN) {
+        console.log(`⚠️  To use a fresh token, set: GOOGLE_CLOUD_TOKEN=your-token`);
+        console.log(`   Get token with: gcloud auth print-access-token`);
+    }
 }); 
