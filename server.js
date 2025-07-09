@@ -18,6 +18,57 @@ const fetch = (() => {
     }
 })();
 
+// Google Auth library for service account authentication
+let GoogleAuth;
+try {
+    const { GoogleAuth: GA } = require('google-auth-library');
+    GoogleAuth = GA;
+    console.log('✅ Google Auth Library loaded successfully');
+} catch (error) {
+    console.log('⚠️  google-auth-library not installed. Install with: npm install google-auth-library');
+    console.log('    Falling back to manual token authentication');
+}
+
+// Function to get access token using Google Auth
+async function getGoogleCloudAccessToken() {
+    if (!GoogleAuth) {
+        throw new Error('Google Auth Library not available. Install with: npm install google-auth-library');
+    }
+
+    try {
+        console.log('🔐 Getting Google Cloud access token...');
+        
+        const auth = new GoogleAuth({
+            keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || './service-account-key.json',
+            scopes: ['https://www.googleapis.com/auth/cloud-platform']
+        });
+        
+        const client = await auth.getClient();
+        const accessToken = await client.getAccessToken();
+        
+        console.log('✅ Successfully obtained access token');
+        return accessToken.token;
+    } catch (error) {
+        console.error('❌ Error getting access token:', error.message);
+        
+        // Try Application Default Credentials as fallback
+        try {
+            console.log('🔄 Trying Application Default Credentials...');
+            const auth = new GoogleAuth({
+                scopes: ['https://www.googleapis.com/auth/cloud-platform']
+            });
+            const client = await auth.getClient();
+            const accessToken = await client.getAccessToken();
+            
+            console.log('✅ Successfully obtained access token via ADC');
+            return accessToken.token;
+        } catch (adcError) {
+            console.error('❌ ADC also failed:', adcError.message);
+            throw new Error(`Authentication failed: ${error.message}. Try: gcloud auth application-default login`);
+        }
+    }
+}
+
 const app = express();
 const PORT = process.env.PORT || 80;
 
@@ -825,14 +876,26 @@ app.post('/api/generate-image', async (req, res) => {
             orientation: selectedOrientation || 'landscape'
         });
         
-        // Check for authorization token
-        const authToken = process.env.GOOGLE_CLOUD_TOKEN || 'ya29.a0AS3H6Nx1kox-buURQVjzyn0OQwSnzOgfRUAxIx2Cp4bPDljxmBGfR-MaROAgdL-YNUP5zTGnlV2AJyAgPvdBS-twUXtIDZJ1KFkCskxXMnvjgbyU9GivQ5JO1isd6RsbC2bf6Wz4VfAcBlBZyk0UVUYiSxXZNUDO04_pxLW7xsQ7ixvgaCgYKAe8SAQ4SFQHGX2MimBzH7hPwZ48sSXnQxX1hAA0183';
-        
-        if (!authToken) {
-            return res.status(500).json({
-                success: false,
-                error: 'Google Cloud authorization token not configured'
-            });
+        // Get Google Cloud access token
+        let authToken;
+        try {
+            // Try to get access token using GoogleAuth
+            authToken = await getGoogleCloudAccessToken();
+        } catch (error) {
+            console.error('❌ Failed to get access token:', error.message);
+            
+            // Fallback to environment variable if GoogleAuth fails
+            authToken = process.env.GOOGLE_CLOUD_TOKEN;
+            
+            if (!authToken) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'Google Cloud authentication failed. Please set up service account or run: gcloud auth application-default login',
+                    details: error.message
+                });
+            } else {
+                console.log('🔄 Using fallback token from environment variable');
+            }
         }
         
         // Make request to Google Cloud AI Platform

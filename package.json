@@ -24,6 +24,7 @@
     "canvas": "^3.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "google-auth-library": "^9.6.3",
     "minimist": "^1.2.3",
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
